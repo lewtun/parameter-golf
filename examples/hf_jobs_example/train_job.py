@@ -1,7 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "huggingface-hub>=1.7.0",
+# ]
+# ///
 """
 Parameter-golf training job — runs on Hugging Face infrastructure.
-Launched by launch_job.py via api.run_job() with the huggingface/trl Docker image
-(torch + transformers prebuilt).
+Launched by launch_job.py via run_uv_job().
 """
 import datetime, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
@@ -25,7 +30,7 @@ def update_config_status(status: str):
 
 
 def log(msg: str):
-    print(f"[{datetime.datetime.utcnow().strftime('%H:%M:%S')}] {msg}", flush=True)
+    print(f"[{datetime.datetime.now(datetime.UTC).strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def main():
@@ -35,13 +40,12 @@ def main():
     workdir = Path("/workspace")
     workdir.mkdir(exist_ok=True)
 
-    # Install extra deps not in the huggingface/trl base image
-    # (torch, datasets, numpy, tqdm etc. are already prebuilt)
+    # Install training deps — use uv since the UV runtime doesn't ship pip
     log("Installing extra dependencies...")
     subprocess.run([
-        sys.executable, "-m", "pip", "install", "-q",
-        "tiktoken", "sentencepiece", "kernels", "trackio",
-        "typing-extensions==4.15.0",
+        "uv", "pip", "install", "--quiet",
+        "torch", "datasets", "tiktoken", "sentencepiece",
+        "kernels", "trackio", "typing-extensions==4.15.0",
     ], check=True)
     log("Dependencies installed.")
 
@@ -90,34 +94,33 @@ def main():
         bufsize=1,  # line-buffered
     )
 
-    log_file = open(log_path, "w")
-    for line in proc.stdout:
-        print(line, end="", flush=True)  # stream to job logs live
-        log_file.write(line)
-        log_lines.append(line)
+    with open(log_path, "w") as log_file:
+        for line in proc.stdout:
+            print(line, end="", flush=True)  # stream to job logs live
+            log_file.write(line)
+            log_lines.append(line)
 
-        # Parse and log training metrics to Trackio in real time
-        step_m = re.search(
-            r"step:(\d+)/\d+ train_loss:([\d.]+) train_time:(\d+)ms", line
-        )
-        if step_m:
-            step = int(step_m.group(1))
-            wandb.log({
-                "train/loss": float(step_m.group(2)),
-                "train/time_ms": int(step_m.group(3)),
-            }, step=step)
+            # Parse and log training metrics to Trackio in real time
+            step_m = re.search(
+                r"step:(\d+)/\d+ train_loss:([\d.]+) train_time:(\d+)ms", line
+            )
+            if step_m:
+                step = int(step_m.group(1))
+                wandb.log({
+                    "train/loss": float(step_m.group(2)),
+                    "train/time_ms": int(step_m.group(3)),
+                }, step=step)
 
-        val_m = re.search(
-            r"step:(\d+)/\d+ val_loss:([\d.]+) val_bpb:([\d.]+)", line
-        )
-        if val_m:
-            step = int(val_m.group(1))
-            wandb.log({
-                "val/loss": float(val_m.group(2)),
-                "val/bpb": float(val_m.group(3)),
-            }, step=step)
+            val_m = re.search(
+                r"step:(\d+)/\d+ val_loss:([\d.]+) val_bpb:([\d.]+)", line
+            )
+            if val_m:
+                step = int(val_m.group(1))
+                wandb.log({
+                    "val/loss": float(val_m.group(2)),
+                    "val/bpb": float(val_m.group(3)),
+                }, step=step)
 
-    log_file.close()
     proc.wait()
     all_output = "".join(log_lines)
 
@@ -145,7 +148,7 @@ def main():
         "val_bpb":           val_bpb,
         "bytes_total":       bytes_total,
         "training_time_ms":  training_time_ms,
-        "completed_at":      datetime.datetime.utcnow().isoformat() + "Z",
+        "completed_at":      datetime.datetime.now(datetime.UTC).isoformat() + "Z",
         "exit_code":         proc.returncode,
     }
 

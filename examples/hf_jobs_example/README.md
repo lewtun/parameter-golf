@@ -8,14 +8,15 @@ This example shows how to use [Hugging Face Jobs](https://huggingface.co/docs/hu
 launch_job.py (local)
   ├── Creates bucket  hf://buckets/{username}/parameter-golf/
   ├── Writes          {experiment}/config.json  (status: LAUNCHING)
-  ├── Submits         train_job.py via run_uv_job()
+  ├── Submits         train_job.py via run_uv_job()  [PEP 723 uv script]
   └── Updates         {experiment}/config.json  (status: RUNNING, job_id, job_url)
 
-train_job.py (cloud, via UV)
-  ├── Installs torch + training deps
+train_job.py (cloud, uv runtime)
+  ├── Installs torch + training deps via uv pip install
   ├── Clones the repo
   ├── Downloads FineWeb data
   ├── Runs torchrun train_gpt.py
+  ├── Streams metrics to Trackio in real time
   └── Uploads to bucket:
         {experiment}/train.log
         {experiment}/results.json
@@ -40,7 +41,7 @@ hf://buckets/{username}/parameter-golf/
 
 ```bash
 export HF_TOKEN=hf_...
-pip install "huggingface_hub>=1.7.0"
+uv pip install "huggingface_hub>=1.7.0"
 ```
 
 ## Usage

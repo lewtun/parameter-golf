@@ -7,10 +7,8 @@ Usage:
 """
 import argparse, datetime, json, os
 from pathlib import Path
-from huggingface_hub import HfApi, create_bucket, batch_bucket_files, whoami
+from huggingface_hub import HfApi, create_bucket, batch_bucket_files, run_uv_job, whoami
 from huggingface_hub.utils import get_token
-
-DOCKER_IMAGE = "huggingface/trl"
 
 BUCKET_REPO = "parameter-golf"
 
@@ -54,7 +52,7 @@ def main():
         "model_dim":   args.dim,
         "matrix_lr":   args.matrix_lr,
         "embed_lr":    args.embed_lr,
-        "launched_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "launched_at": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
         "status":      "LAUNCHING",
     }
     batch_bucket_files(
@@ -74,19 +72,8 @@ def main():
     if not args.no_trackio and args.trackio_space:
         env["TRACKIO_SPACE_ID"] = f"{namespace}/{args.trackio_space}"
 
-    # Embed train_job.py as base64 in the command so it's available in the container
-    import base64
-    script_b64 = base64.b64encode(
-        (Path(__file__).parent / "train_job.py").read_bytes()
-    ).decode()
-
-    api = HfApi(token=hf_token)
-    job = api.run_job(
-        image=DOCKER_IMAGE,
-        command=[
-            "bash", "-c",
-            f"echo '{script_b64}' | base64 -d > /tmp/train_job.py && python -u /tmp/train_job.py",
-        ],
+    job = run_uv_job(
+        script=Path(__file__).parent / "train_job.py",
         flavor=args.hardware,
         env=env,
         secrets={"HF_TOKEN": hf_token},
@@ -107,8 +94,9 @@ def main():
         print(f"Follow:    hf jobs logs {job.id} -f")
         return
 
-    # Stream logs until job completes (like trl-jobs)
+    # Stream logs until job completes
     print(f"\n--- Streaming logs for {job.id} (Ctrl+C to detach) ---\n")
+    api = HfApi(token=hf_token)
     try:
         for log in api.fetch_job_logs(job_id=job.id):
             print(log)
