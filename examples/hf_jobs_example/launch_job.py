@@ -7,8 +7,10 @@ Usage:
 """
 import argparse, datetime, json, os
 from pathlib import Path
-from huggingface_hub import create_bucket, batch_bucket_files, run_uv_job, whoami
+from huggingface_hub import HfApi, create_bucket, batch_bucket_files, whoami
 from huggingface_hub.utils import get_token
+
+DOCKER_IMAGE = "huggingface/trl"
 
 BUCKET_REPO = "parameter-golf"
 
@@ -25,6 +27,12 @@ def parse_args():
                    help="HF flavor (run `hf jobs hardware` to list options; "
                         "use a100x8 for 8×A100 or h200x8 for 8×H200)")
     p.add_argument("--timeout",   default="20m")
+    p.add_argument("-d", "--detach", action="store_true",
+                   help="Print job ID and exit without streaming logs")
+    p.add_argument("--trackio-space", default="parameter-golf-experiments",
+                   help="Trackio Space name for live metrics (default: parameter-golf-experiments)")
+    p.add_argument("--no-trackio", action="store_true",
+                   help="Disable Trackio logging")
     return p.parse_args()
 
 
@@ -54,17 +62,33 @@ def main():
         add=[(json.dumps(config, indent=2).encode(), f"{args.name}/config.json")],
     )
 
-    job = run_uv_job(
-        script=Path(__file__).parent / "train_job.py",
+    env = {
+        "PYTHONUNBUFFERED": "1",
+        "EXPERIMENT_NAME": args.name,
+        "BUCKET_ID":       bucket_id,
+        "NUM_LAYERS":      str(args.layers),
+        "MODEL_DIM":       str(args.dim),
+        "MATRIX_LR":       str(args.matrix_lr),
+        "EMBED_LR":        str(args.embed_lr),
+    }
+    if not args.no_trackio and args.trackio_space:
+        env["TRACKIO_SPACE_ID"] = f"{namespace}/{args.trackio_space}"
+
+    # Embed train_job.py as base64 in the command so it's available in the container
+    import base64
+    script_b64 = base64.b64encode(
+        (Path(__file__).parent / "train_job.py").read_bytes()
+    ).decode()
+
+    api = HfApi(token=hf_token)
+    job = api.run_job(
+        image=DOCKER_IMAGE,
+        command=[
+            "bash", "-c",
+            f"echo '{script_b64}' | base64 -d > /tmp/train_job.py && python -u /tmp/train_job.py",
+        ],
         flavor=args.hardware,
-        env={
-            "EXPERIMENT_NAME": args.name,
-            "BUCKET_ID":       bucket_id,
-            "NUM_LAYERS":      str(args.layers),
-            "MODEL_DIM":       str(args.dim),
-            "MATRIX_LR":       str(args.matrix_lr),
-            "EMBED_LR":        str(args.embed_lr),
-        },
+        env=env,
         secrets={"HF_TOKEN": hf_token},
         timeout=args.timeout,
         namespace=namespace,
@@ -77,8 +101,19 @@ def main():
     )
 
     print(f"Launched:  {job.url}")
-    print(f"Follow:    hf jobs logs {job.id} -f")
     print(f"Bucket:    hf://buckets/{bucket_id}/{args.name}/")
+
+    if args.detach:
+        print(f"Follow:    hf jobs logs {job.id} -f")
+        return
+
+    # Stream logs until job completes (like trl-jobs)
+    print(f"\n--- Streaming logs for {job.id} (Ctrl+C to detach) ---\n")
+    try:
+        for log in api.fetch_job_logs(job_id=job.id):
+            print(log)
+    except KeyboardInterrupt:
+        print(f"\nDetached. Follow:  hf jobs logs {job.id} -f")
 
 
 if __name__ == "__main__":
