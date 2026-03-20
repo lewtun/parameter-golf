@@ -35,9 +35,9 @@ def main():
     workdir = Path("/workspace")
     workdir.mkdir(exist_ok=True)
 
-    # Install training deps (torch, etc.)
+    # Install training deps (torch, etc.) — use uv since the UV runtime doesn't ship pip
     subprocess.run([
-        sys.executable, "-m", "pip", "install", "-q",
+        "uv", "pip", "install", "--quiet",
         "torch", "datasets", "tiktoken", "sentencepiece",
         "kernels", "typing-extensions==4.15.0",
     ], check=True)

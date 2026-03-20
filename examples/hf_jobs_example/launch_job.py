@@ -8,6 +8,7 @@ Usage:
 import argparse, datetime, json, os
 from pathlib import Path
 from huggingface_hub import create_bucket, batch_bucket_files, run_uv_job, whoami
+from huggingface_hub.utils import get_token
 
 BUCKET_REPO = "parameter-golf"
 
@@ -29,9 +30,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    hf_token = os.environ.get("HF_TOKEN")
+    hf_token = os.environ.get("HF_TOKEN") or get_token()
     if not hf_token:
-        raise SystemExit("Set HF_TOKEN in your environment first.")
+        raise SystemExit("Set HF_TOKEN or run `hf auth login` first.")
 
     namespace = args.namespace or whoami()["name"]
     bucket_id = f"{namespace}/{BUCKET_REPO}"
