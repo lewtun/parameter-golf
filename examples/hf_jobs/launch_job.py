@@ -106,7 +106,7 @@ def main():
     print(f"\n--- Streaming logs for {job.id} (Ctrl+C to detach) ---\n")
     api = HfApi(token=hf_token)
     try:
-        for log in api.fetch_job_logs(job_id=job.id):
+        for log in api.fetch_job_logs(job_id=job.id, follow=True):
             print(log)
     except KeyboardInterrupt:
         print(f"\nDetached. Follow:  hf jobs logs {job.id} -f")

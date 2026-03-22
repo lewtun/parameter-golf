@@ -44,16 +44,33 @@ uv pip install "huggingface_hub>=1.7.0"
 hf auth login
 ```
 
+### Coding agent skills
+
+If you're using a coding agent (Claude Code, Codex, etc.), the following [Hugging Face skills](https://github.com/huggingface/skills) are useful for working with this example:
+
+- **[hugging-face-jobs](https://github.com/huggingface/skills/tree/main/skills/hugging-face-jobs)** — Job submission, hardware selection, log streaming, and lifecycle management via Python API, CLI, and MCP.
+- **[hugging-face-trackio](https://github.com/huggingface/skills/tree/main/skills/hugging-face-trackio)** — Experiment tracking with `trackio.init()`/`log()`/`finish()`, alerts for anomaly detection, and CLI-based metric retrieval.
+- **[hf-cli](https://github.com/huggingface/skills/tree/main/skills/hf-cli)** — The `hf` CLI for auth, job monitoring (`hf jobs logs`), bucket operations (`hf buckets ls`), and repo management.
+
+To install with e.g. Claude Code:
+
+```
+/plugin marketplace add huggingface/skills
+/plugin install hugging-face-jobs@huggingface/skills
+/plugin install hugging-face-trackio@huggingface/skills
+/plugin install hf-cli@huggingface/skills
+```
+
 ## Usage
 
 ### Launch an experiment
 
 ```bash
-# Baseline run on 8×A100 — logs stream in your terminal by default
+# Baseline run on 8×H200 — logs stream in your terminal by default
 # Trackio metrics auto-log to {your-username}/parameter-golf-experiments
-python launch_job.py --name baseline-9L --hardware a100x8
+python launch_job.py --name baseline-9L --hardware h200x8
 
-# 10-layer run on 8×H200 — detach immediately
+# 10-layer run — detach immediately
 python launch_job.py --name my-10L-run --layers 10 --dim 512 --hardware h200x8 --detach
 
 # Launch without Trackio logging
