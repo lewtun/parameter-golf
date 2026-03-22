@@ -2,7 +2,7 @@
 """Launch a parameter-golf training experiment using HF Jobs.
 
 Usage:
-    export HF_TOKEN=hf_...
+    hf auth login
     python launch_job.py --name "my-10L-run" --layers 10 --dim 512
 """
 import argparse, datetime, json, os
@@ -24,6 +24,8 @@ def parse_args():
     p.add_argument("--hardware",  default="a100x8",
                    help="HF flavor (run `hf jobs hardware` to list options; "
                         "use a100x8 for 8×A100 or h200x8 for 8×H200)")
+    p.add_argument("--image", default=None,
+                   help="Custom Docker image (e.g. huggingface/trl)")
     p.add_argument("--timeout",   default="20m")
     p.add_argument("-d", "--detach", action="store_true",
                    help="Print job ID and exit without streaming logs")
@@ -69,10 +71,12 @@ def main():
         "MATRIX_LR":       str(args.matrix_lr),
         "EMBED_LR":        str(args.embed_lr),
     }
+    if args.image:
+        env["DOCKER_IMAGE"] = args.image
     if not args.no_trackio and args.trackio_space:
         env["TRACKIO_SPACE_ID"] = f"{namespace}/{args.trackio_space}"
 
-    job = run_uv_job(
+    job_kwargs = dict(
         script=Path(__file__).parent / "train_job.py",
         flavor=args.hardware,
         env=env,
@@ -80,6 +84,10 @@ def main():
         timeout=args.timeout,
         namespace=namespace,
     )
+    if args.image:
+        job_kwargs["image"] = args.image
+
+    job = run_uv_job(**job_kwargs)
 
     config.update({"job_id": job.id, "job_url": job.url, "status": "RUNNING"})
     batch_bucket_files(

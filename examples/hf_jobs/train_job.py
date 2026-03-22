@@ -2,6 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "huggingface-hub>=1.7.0",
+#   "trackio",
 # ]
 # ///
 """
@@ -40,34 +41,47 @@ def main():
     workdir = Path("/workspace")
     workdir.mkdir(exist_ok=True)
 
-    # Install training deps — use uv since the UV runtime doesn't ship pip
-    log("Installing extra dependencies...")
-    subprocess.run([
-        "uv", "pip", "install", "--quiet",
-        "torch", "datasets", "tiktoken", "sentencepiece",
-        "kernels", "trackio", "typing-extensions==4.15.0",
-    ], check=True)
-    log("Dependencies installed.")
-
     # Clone repo
     log("Cloning repo...")
     subprocess.run(["git", "clone", REPO_URL, str(workdir / "repo")], check=True)
     repo = workdir / "repo"
     log("Repo cloned.")
 
+    # Install training deps
+    docker_image = os.environ.get("DOCKER_IMAGE", "")
+    use_trl_image = "trl" in docker_image
+    conda_python = "/opt/conda/bin/python"
+    if use_trl_image:
+        # TRL image (conda-based) already has torch, numpy, tqdm, datasets, kernels, etc.
+        # Install only what's missing into the conda/system Python so torchrun can find them.
+        log("TRL image detected — installing only missing dependencies into system Python...")
+        subprocess.run([
+            conda_python, "-m", "pip", "install", "--quiet",
+            "tiktoken", "sentencepiece", "typing-extensions==4.15.0",
+        ], check=True)
+    else:
+        log("Installing all dependencies...")
+        subprocess.run([
+            "uv", "pip", "install", "--quiet",
+            "-r", str(repo / "requirements.txt"),
+            "trackio",
+        ], check=True)
+    log("Dependencies installed.")
+
     # Download FineWeb data
     log("Downloading FineWeb data...")
+    data_python = conda_python if use_trl_image else sys.executable
     subprocess.run(
-        [sys.executable, "data/cached_challenge_fineweb.py", "--train-shards", "10"],
+        [data_python, "data/cached_challenge_fineweb.py", "--train-shards", "10"],
         cwd=repo, check=True,
     )
 
     log("FineWeb data downloaded.")
 
     # Initialize Trackio for live metric tracking (imported after pip install)
-    import trackio as wandb
+    import trackio
     trackio_space = os.environ.get("TRACKIO_SPACE_ID")
-    wandb.init(
+    trackio.init(
         project="parameter-golf",
         name=experiment,
         config={
@@ -85,8 +99,14 @@ def main():
     log_path = workdir / "train.log"
     log_lines = []
 
+    if use_trl_image:
+        # Use the conda Python's torchrun so it can find all system packages
+        torchrun_cmd = ["/opt/conda/bin/torchrun", "--nproc_per_node=8", "train_gpt.py"]
+    else:
+        torchrun_cmd = ["torchrun", "--nproc_per_node=8", "train_gpt.py"]
+
     proc = subprocess.Popen(
-        ["torchrun", "--nproc_per_node=8", "train_gpt.py"],
+        torchrun_cmd,
         cwd=repo,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -106,7 +126,7 @@ def main():
             )
             if step_m:
                 step = int(step_m.group(1))
-                wandb.log({
+                trackio.log({
                     "train/loss": float(step_m.group(2)),
                     "train/time_ms": int(step_m.group(3)),
                 }, step=step)
@@ -116,7 +136,7 @@ def main():
             )
             if val_m:
                 step = int(val_m.group(1))
-                wandb.log({
+                trackio.log({
                     "val/loss": float(val_m.group(2)),
                     "val/bpb": float(val_m.group(3)),
                 }, step=step)
@@ -140,8 +160,8 @@ def main():
     # Log final summary to Trackio
     summary = {"val_bpb": val_bpb, "val_loss": val_loss, "bytes_total": bytes_total,
                "training_time_ms": training_time_ms, "exit_code": proc.returncode}
-    wandb.log({f"final/{k}": v for k, v in summary.items() if v is not None})
-    wandb.finish()
+    trackio.log({f"final/{k}": v for k, v in summary.items() if v is not None})
+    trackio.finish()
 
     results = {
         "val_loss":          val_loss,

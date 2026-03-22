@@ -40,8 +40,8 @@ hf://buckets/{username}/parameter-golf/
 ## Setup
 
 ```bash
-export HF_TOKEN=hf_...
 uv pip install "huggingface_hub>=1.7.0"
+hf auth login
 ```
 
 ## Usage
