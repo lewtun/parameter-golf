@@ -99,7 +99,8 @@ hf buckets ls {username}/parameter-golf -R
 
 Run `hf jobs hardware` to see the full list.
 
-> **Note:** HF Jobs does not offer H100 instances. The competition requires reproducibility on 8×H100; `a100x8` is the closest available option. Both `a100x8` and `h200x8` have 8 GPUs so `--nproc_per_node=8` applies unchanged.
+> [!NOTE] 
+> HF Jobs does not offer H100 instances. The competition requires reproducibility on 8×H100; `a100x8` is the closest available option. Both `a100x8` and `h200x8` have 8 GPUs so `--nproc_per_node=8` applies unchanged.
 
 ### Env vars passed to train_job.py
 
