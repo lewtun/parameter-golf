@@ -6,6 +6,8 @@ Usage:
     python launch_job.py --name "my-10L-run" --layers 10 --dim 512
 """
 import argparse, datetime, json, os
+
+os.environ["HF_HUB_DISABLE_EXPERIMENTAL_WARNING"] = "1"
 from pathlib import Path
 from huggingface_hub import HfApi, create_bucket, batch_bucket_files, run_uv_job, whoami
 from huggingface_hub.utils import get_token
